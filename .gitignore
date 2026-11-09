@@ -1,0 +1,16 @@
+# 로그·터미널 녹화 파일
+*.log
+terminal-log*.txt
+
+# 환경변수·비밀 정보 (토큰, 키, 인증 정보)
+.env
+.env.*
+*.pem
+*.key
+.git-credentials
+
+# OS·편집기가 자동으로 만드는 파일
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
