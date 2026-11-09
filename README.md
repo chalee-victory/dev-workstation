@@ -10,7 +10,7 @@
 2. 실행 환경
 3. 수행 체크리스트
 4. 검증 방법 및 증거 위치
-5. 수행 로그 (4-1 ~ 4-17)
+5. 수행 로그 (4-1 ~ 4-20)
 6. 트러블슈팅
 7. 보안 및 개인정보 보호
 8. 저장소 구조
@@ -41,6 +41,16 @@
 > - Docker Desktop을 쓰는 환경(또는 sudo가 제한된 환경에서 OrbStack 등)에서도 `docker` 명령은 동일하게 사용할 수 있습니다. 이 기록은 WSL Ubuntu에 Docker Engine을 직접 설치한 경우입니다.
 > - VSCode는 반드시 WSL 터미널에서 `code .`로 열어야 WSL 쪽 Git과 설정이 적용됩니다 (6) TS-4 참고).
 
+**환경별 경로·주의사항 요약**
+| 구분 | WSL(Ubuntu) 쪽 | Windows 쪽 | 주의 |
+|---|---|---|---|
+| 작업 폴더 | `/home/chalee/codyssey/dev-workstation` | `\\wsl.localhost\Ubuntu-24.04\home\chalee\codyssey\dev-workstation` | 작업·Docker 마운트는 WSL 경로에서 |
+| Windows 파일 | `/mnt/c/Users/OWNER/Desktop/...` | `C:\Users\OWNER\Desktop\...` | `/mnt/c`에서 복사한 파일은 `rwxrwxrwx`로 보임 → 커밋 전 `chmod 644` (5장 4-20) |
+| 바인드 마운트 | `-v "$(pwd)/bind-test":...` 처럼 **절대 경로** | 사용하지 않음 | `/`로 시작하지 않으면 볼륨 이름으로 해석됨 (4-13) |
+| 브라우저 접속 | `curl http://localhost:8080` | 브라우저 `http://localhost:8080` | WSL2가 localhost를 Windows와 공유 (4-12) |
+| VSCode | WSL 터미널에서 `code .` | 작업 표시줄 아이콘으로 열면 Windows 모드 | 왼쪽 아래 `WSL: Ubuntu-24.04` 확인 (TS-4) |
+| GitHub 인증 | VSCode(WSL) 통합 터미널에서 `git push` | 브라우저 OAuth 승인 | 일반 터미널은 계정 비밀번호 불가 (TS-7) |
+
 ## 3) 수행 체크리스트
 - [x] 터미널 기본 조작 및 폴더 구성 (4-1 ~ 4-3)
 - [x] 권한 변경 실습 (파일 1, 디렉토리 1) + 권한 차단 확인 (4-4, 4-5)
@@ -54,6 +64,9 @@
 - [x] Git 사용자 정보·기본 브랜치 설정 (4-15)
 - [x] VSCode + WSL 연결 + GitHub 로그인 (4-16)
 - [x] 로컬 저장소 생성 + `.gitignore` + GitHub 원격 저장소 연결 (4-17)
+- [x] 포트 충돌 재현 → 점유 프로세스 진단 → 포트 해제 (4-18)
+- [x] 볼륨 백업 → 새 볼륨에 복원 (4-19)
+- [x] 첫 커밋 및 GitHub push, 커밋 이력 링크 (4-20)
 - [x] 트러블슈팅 2건 이상 (6장)
 
 ## 4) 검증 방법 및 증거 위치
@@ -72,6 +85,9 @@
 | Git 설정 | `git config --list` | user.name, user.email(마스킹), init.defaultbranch=main | 5장 4-15 |
 | VSCode·GitHub 로그인 | `code --version`, `code .`, VSCode 계정 메뉴 | `WSL: Ubuntu-24.04`, `chalee-victory (GitHub)` | 5장 4-16, [`vscode-github-login.png`](docs/images/vscode-github-login.png) |
 | 저장소 연동 | `git init`, `git status`, `git check-ignore -v`, `git remote -v` | main 브랜치, `.gitignore` 차단, origin 등록 | 5장 4-17, [`vscode-source-control.png`](docs/images/vscode-source-control.png) |
+| 포트 충돌 진단·해제 | `sudo ss -ltnp`, `docker ps --filter publish=8080`, `docker stop`, `docker inspect`, `docker port` | `port is already allocated` → 점유자 확인 → 해제 후 재실행 성공 | 5장 4-18, 6장 TS-6 |
+| 볼륨 백업·복원 | `docker run --rm ... tar czf` / `tar xzf`, `docker volume create` | 백업 파일 생성, 빈 새 볼륨에 복원 후 같은 데이터 확인 | 5장 4-19 |
+| GitHub push | `git commit`, `git push -u origin main`, `git log` | `* [new branch] main -> main`, 커밋 `39c85f7` | 5장 4-20, [커밋 이력](https://github.com/chalee-victory/dev-workstation/commits/main) |
 
 ## 5) 수행 로그
 
@@ -659,6 +675,7 @@ CONTAINER ID   IMAGE        COMMAND                  CREATED          STATUS    
 - 그래서 호스트에서 수정하면 재빌드·재시작 없이 즉시 반영된다. → 코드를 자주 고치는 **개발 단계**에 유용
 - 반대로 `COPY`(4-11)는 빌드 시점의 파일을 이미지에 고정 → 어디서 실행해도 같은 결과가 필요한 **배포 단계**에 적합
 - 컨테이너 ID가 같고 가동 시간이 끊기지 않았으므로(17초 → 14분) 재시작 없이 반영되었음을 확인
+- **권장 패턴:** 개발 중에는 바인드 마운트로 즉시 반영, 배포 시에는 소스를 `COPY`한 **버전 고정 이미지**(`my-web:1.0`)를 사용 — 이미지는 한 번 만들면 바꾸지 않고(immutable), 바꿀 땐 새 태그(`1.1`)로 다시 빌드
 
 ### 4-14. Docker 볼륨 영속성 (컨테이너 삭제 전/후 비교)
 
@@ -983,7 +1000,7 @@ chalee@LG:~/codyssey/dev-workstation$ cat .git/config
 ```
 - `origin` = 원격 저장소 주소의 별명(관례). `(fetch)` 가져오기 / `(push)` 보내기 주소
 - `git remote add`는 인터넷에 접속하지 않고 `.git/config`에 `[remote "origin"]` 항목을 기록함
-- 이후 README와 증거 이미지를 포함해 첫 커밋 후 `git push -u origin main`으로 업로드
+- README와 증거 이미지를 포함한 첫 커밋과 GitHub 업로드 기록은 4-20 참고
 
 **(6) VSCode 소스 제어에서 저장소 인식 확인**
 
@@ -994,7 +1011,246 @@ chalee@LG:~/codyssey/dev-workstation$ cat .git/config
 - 상태 표시줄: `WSL: Ubuntu-24.04`, `main*`(`*` = 커밋되지 않은 변경 있음)
 - `.gitignore`가 VSCode에서도 동일하게 적용됨
 
+### 4-18. 포트 충돌 진단 및 해제
+
+**목적:** 호스트 포트는 하나의 프로그램만 점유할 수 있다(4-12). 같은 포트를 두 컨테이너가 쓰려 할 때의 오류를 일부러 재현하고, 누가 포트를 점유했는지 운영체제·Docker 양쪽에서 진단한 뒤 포트를 해제해 다시 실행한다.
+
+**(1) 충돌 전: 포트 사용 현황**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+NAMES         STATUS                     PORTS
+my-web-bind   Exited (0) 39 hours ago
+my-web-8081   Exited (0) 2 days ago
+my-web-8080   Exited (0) 2 days ago
+my-web        Exited (0) 2 days ago
+...
+chalee@LG:~/codyssey/dev-workstation$ sudo ss -ltnp | grep -E ':808[0-2]' || echo "8080~8082 포트를 사용하는 프로그램 없음"
+8080~8082 포트를 사용하는 프로그램 없음
+```
+- `ss -ltnp`: 접속을 기다리는(**l**isten) **T**CP 포트를 **숫자**로, 점유한 **프로세스**와 함께 표시 (`sudo`가 있어야 다른 사용자의 프로세스 이름까지 보임)
+
+**(2) 8080 점유 → 같은 포트로 실행 → 충돌**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ docker start my-web-8080
+my-web-8080
+chalee@LG:~/codyssey/dev-workstation$ sudo ss -ltnp | grep ':8080'
+LISTEN 0      4096          0.0.0.0:8080       0.0.0.0:*    users:(("docker-proxy",pid=31282,fd=7))
+LISTEN 0      4096             [::]:8080          [::]:*    users:(("docker-proxy",pid=31290,fd=7))
+chalee@LG:~/codyssey/dev-workstation$ docker run -d -p 8080:80 --name port-conflict my-web:1.0
+aa37fb2ad3d569a8054cdfc953e430e093ecc4451d3fe7fae8580143f5f59ae5
+docker: Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint port-conflict (31e072438e02...): Bind for 0.0.0.0:8080 failed: port is already allocated
+```
+- `docker-proxy`: `-p` 포트 매핑을 위해 Docker가 호스트에 띄우는 중계 프로그램. 이것이 8080을 점유 중
+- `port is already allocated`: 8080이 이미 다른 컨테이너에 할당됨. 컨테이너 생성(create)은 됐지만 실행(start) 단계의 포트 연결에서 실패
+
+**(3) 진단: 누가 8080을 쓰는가**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ docker ps -a --filter publish=8080 --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+NAMES         STATUS                    PORTS
+my-web-8080   Up 15 minutes (healthy)   0.0.0.0:8080->80/tcp, [::]:8080->80/tcp
+chalee@LG:~/codyssey/dev-workstation$ docker ps -a --filter name=port-conflict --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+NAMES           STATUS    PORTS
+port-conflict   Created
+```
+- 운영체제 관점(`ss`): `docker-proxy`가 8080 점유 / Docker 관점(`--filter publish=8080`): `my-web-8080`이 점유
+- 실패한 `port-conflict`는 `Created`(생성만 되고 실행된 적 없음) 상태로 남음
+
+**(4) 해제: 점유 컨테이너 정지 → 포트 비었는지 확인**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ docker stop my-web-8080
+my-web-8080
+chalee@LG:~/codyssey/dev-workstation$ sudo ss -ltnp | grep ':8080' || echo "8080 포트 해제됨"
+8080 포트 해제됨
+```
+
+**(5) 재실행 — 실패했던 컨테이너를 `start`하면 포트가 연결되지 않음 (TS-6)**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ docker start port-conflict
+port-conflict
+chalee@LG:~/codyssey/dev-workstation$ docker ps -a --filter name=port-conflict --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+NAMES           STATUS                   PORTS
+port-conflict   Up 2 minutes (healthy)
+chalee@LG:~/codyssey/dev-workstation$ docker port port-conflict
+chalee@LG:~/codyssey/dev-workstation$ docker inspect port-conflict --format '설정: {{json .HostConfig.PortBindings}} / 실제: {{json .NetworkSettings.Ports}}'
+설정: {"80/tcp":[{"HostIp":"","HostPort":"8080"}]} / 실제: {}
+```
+- 컨테이너는 실행 중(healthy)이지만 PORTS가 비어 있고 `docker port` 출력도 없음 → 설정에는 8080이 기록돼 있으나 실제 연결은 `{}`
+
+**(6) 해결: 삭제 후 새로 `run` → 포트 연결·접속 성공 → 정리**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ docker rm -f port-conflict
+port-conflict
+chalee@LG:~/codyssey/dev-workstation$ docker run -d -p 8080:80 --name port-conflict my-web:1.0
+157fe424c508b94b01a6fed69c78f5c942345df98843c53ef7ac961d4db39e25
+chalee@LG:~/codyssey/dev-workstation$ docker port port-conflict && curl -s http://localhost:8080 | grep h1
+80/tcp -> 0.0.0.0:8080
+80/tcp -> [::]:8080
+  <h1>Hello from my custom nginx image!</h1>
+chalee@LG:~/codyssey/dev-workstation$ sudo ss -ltnp | grep ':8080'
+LISTEN 0      4096          0.0.0.0:8080       0.0.0.0:*    users:(("docker-proxy",pid=37459,fd=7))
+LISTEN 0      4096             [::]:8080          [::]:*    users:(("docker-proxy",pid=37466,fd=7))
+chalee@LG:~/codyssey/dev-workstation$ docker rm -f port-conflict
+port-conflict
+```
+
+**포트 충돌 대응 절차 요약**
+| 단계 | 명령 | 확인 내용 |
+|---|---|---|
+| 1. 점유 확인 (OS) | `sudo ss -ltnp \| grep ':<포트>'` | 포트를 LISTEN 중인 프로세스·PID |
+| 2. 점유 확인 (Docker) | `docker ps --filter publish=<포트>` | 그 포트를 공개한 컨테이너 |
+| 3. 해제 | `docker stop <컨테이너>` (또는 다른 호스트 포트 사용 `-p 8083:80`) | `ss` 결과에서 사라짐 |
+| 4. 재실행 | 실패한 컨테이너는 `docker rm` 후 **새로 `docker run`** | `docker port`, `curl`로 연결 확인 |
+
+**요청 흐름 (호스트 → 컨테이너)**
+```text
+브라우저/curl → localhost:8080 → docker-proxy(호스트, LISTEN) → 컨테이너 네트워크 → nginx :80
+```
+
+### 4-19. 볼륨 백업 및 복원
+
+**목적:** 볼륨은 컨테이너 삭제와 무관하게 남지만(4-14), 볼륨 자체를 삭제하거나 PC를 옮기면 데이터가 사라진다. 볼륨 내용을 압축 파일로 백업하고, 빈 새 볼륨에 복원해 같은 데이터가 나오는지 확인한다.
+
+**방법:** 임시 컨테이너(`--rm`)에 **볼륨**(데이터)과 **호스트 폴더**(백업 파일 위치, 바인드 마운트)를 동시에 연결하고, 컨테이너 안에서 `tar`로 묶거나 푼다.
+```text
+백업:  볼륨 mydata ──▶ /data ──tar czf──▶ /backup ──▶ ~/codyssey/volume-backup/mydata-backup.tar.gz
+복원:  ~/codyssey/volume-backup/... ──▶ /backup ──tar xzf──▶ /data ──▶ 새 볼륨 mydata-restore
+```
+
+**(1) 원본 볼륨 확인**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ docker volume ls && docker run --rm -v mydata:/data ubuntu cat /data/hello.txt
+DRIVER    VOLUME NAME
+local     mydata
+hello volume - written by vol-test
+```
+- 4-14의 컨테이너(vol-test2)는 이미 삭제했지만 볼륨 데이터는 그대로 유지됨
+
+**(2) 백업**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ mkdir -p ~/codyssey/volume-backup
+chalee@LG:~/codyssey/dev-workstation$ docker run --rm -v mydata:/data:ro -v "$HOME/codyssey/volume-backup":/backup ubuntu tar czf /backup/mydata-backup.tar.gz -C /data .
+chalee@LG:~/codyssey/dev-workstation$ ls -l ~/codyssey/volume-backup && tar tzvf ~/codyssey/volume-backup/mydata-backup.tar.gz
+total 4
+-rw-r--r-- 1 root root 175 Nov  9 15:15 mydata-backup.tar.gz
+drwxr-xr-x root/root         0 2026-11-07 17:51 ./
+-rw-r--r-- root/root        35 2026-11-07 17:51 ./hello.txt
+```
+- `--rm`: 작업이 끝나면 임시 컨테이너 자동 삭제
+- `mydata:/data:ro`: 원본 볼륨을 **읽기 전용**으로 연결해 백업 중 변경 방지
+- `tar czf ... -C /data .`: `/data` 안의 모든 파일을 gzip 압축 파일로 생성 / `tar tzvf`: 풀지 않고 내용 목록 확인
+- 백업 파일은 실제 데이터를 담으므로 **저장소 밖**(`~/codyssey/volume-backup`)에 보관. 컨테이너 안에서 root로 만들어 소유자가 root
+
+**(3) 복원 전: 새 볼륨은 비어 있음**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ docker volume create mydata-restore
+mydata-restore
+chalee@LG:~/codyssey/dev-workstation$ docker run --rm -v mydata-restore:/data ubuntu ls -la /data
+total 8
+drwxr-xr-x 2 root root 4096 Nov  9 06:19 .
+drwxr-xr-x 1 root root 4096 Nov  9 06:19 ..
+```
+
+**(4) 복원 → 확인**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ docker run --rm -v mydata-restore:/data -v "$HOME/codyssey/volume-backup":/backup:ro ubuntu tar xzf /backup/mydata-backup.tar.gz -C /data
+chalee@LG:~/codyssey/dev-workstation$ docker run --rm -v mydata-restore:/data ubuntu sh -c "ls -la /data && cat /data/hello.txt"
+total 12
+drwxr-xr-x 2 root root 4096 Nov  7 08:51 .
+drwxr-xr-x 1 root root 4096 Nov  9 06:20 ..
+-rw-r--r-- 1 root root   35 Nov  7 08:51 hello.txt
+hello volume - written by vol-test
+chalee@LG:~/codyssey/dev-workstation$ docker volume ls
+DRIVER    VOLUME NAME
+local     mydata
+local     mydata-restore
+```
+- 비어 있던 `mydata-restore`에 원본과 같은 `hello.txt`(35바이트, 같은 문장)가 나타남 → **백업 파일만으로 복원 가능**함을 확인
+- 파일 시각이 `Nov 7`(원본 작성 시각)인 것은 `tar`가 원래 시각·권한을 함께 보존하기 때문
+
+| 단계 | 볼륨 | 내용 |
+|---|---|---|
+| 원본 | `mydata` | `hello volume - written by vol-test` |
+| 백업 | `mydata-backup.tar.gz` (175B) | `./hello.txt` (35B) |
+| 복원 전 | `mydata-restore` | 비어 있음 |
+| 복원 후 | `mydata-restore` | `hello volume - written by vol-test` ✅ |
+
+### 4-20. 첫 커밋 및 GitHub push
+
+**(1) 커밋 전 정리·점검**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ chmod 644 README.md docs/images/*.png
+chalee@LG:~/codyssey/dev-workstation$ grep -rnE "gmail|ghp_|github_pat_|password" --exclude-dir=.git .
+chalee@LG:~/codyssey/dev-workstation$ git add .
+chalee@LG:~/codyssey/dev-workstation$ git status
+On branch main
+
+No commits yet
+
+Changes to be committed:
+  (use "git rm --cached <file>..." to unstage)
+        new file:   .gitignore
+        new file:   Dockerfile
+        new file:   README.md
+        new file:   app/index.html
+        new file:   bind-test/index.html
+        new file:   docs/images/port-8080.png
+        new file:   docs/images/port-8081.png
+        new file:   docs/images/vscode-github-login.png
+        new file:   docs/images/vscode-source-control.png
+        new file:   hello.txt
+        new file:   perm_dir/.gitkeep
+```
+- Windows 폴더(`/mnt/c`)에서 복사한 파일은 실행 권한(x)이 붙어 있어, `filemode = true`인 Git이 실행 파일로 기록하지 않도록 644로 정리
+- `grep` 출력 없음 = 이메일 원문·토큰 형식·비밀번호 문자열 없음
+
+**(2) 커밋**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ git commit -m "Dev workstation mission: Docker, Git setup and README with evidence"
+[main (root-commit) 39c85f7] Dev workstation mission: Docker, Git setup and README with evidence
+ 11 files changed, 1150 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 Dockerfile
+ create mode 100644 README.md
+ ...
+ create mode 100644 perm_dir/.gitkeep
+chalee@LG:~/codyssey/dev-workstation$ git log --oneline
+39c85f7 (HEAD -> main) Dev workstation mission: Docker, Git setup and README with evidence
+chalee@LG:~/codyssey/dev-workstation$ git log -1 --format="작성자: %an / 브랜치 최신 커밋: %h / %s"
+작성자: chalee-victory / 브랜치 최신 커밋: 39c85f7 / Dev workstation mission: Docker, Git setup and README with evidence
+```
+- `(root-commit)`: 저장소의 첫 커밋 / 작성자는 4-15의 `user.name`
+
+**(3) push (VSCode WSL 통합 터미널에서 실행, TS-7)**
+```bash
+chalee@LG:~/codyssey/dev-workstation$ git push -u origin main
+Enumerating objects: 18, done.
+Counting objects: 100% (18/18), done.
+Delta compression using up to 18 threads
+Compressing objects: 100% (11/11), done.
+Writing objects: 100% (18/18), 332.08 KiB | 27.67 MiB/s, done.
+Total 18 (delta 0), reused 0 (delta 0), pack-reused 0
+To https://github.com/chalee-victory/dev-workstation.git
+ * [new branch]      main -> main
+branch 'main' set up to track 'origin/main'.
+```
+- `* [new branch] main -> main`: GitHub에 main 브랜치 생성 / `set up to track`: `-u`로 로컬 main과 `origin/main` 연결 → 이후 `git push`만으로 업로드
+
+**(4) GitHub에서 확인**
+- 커밋: [`39c85f7`](https://github.com/chalee-victory/dev-workstation/commit/39c85f7) — 작성자 `chalee-victory`, 11 files
+- 커밋 이력: https://github.com/chalee-victory/dev-workstation/commits/main (이 README 보완(4-18 ~ 4-20) 커밋도 이후 이력에 추가됨)
+- 저장소 첫 화면에 `Public`, 파일 목록, README와 이미지 4장이 표시됨
+
+**Git 흐름 정리:** `git init`(저장소 생성) → `git remote add`(원격 주소 등록) → `git add`(커밋 대상 담기) → `git commit`(로컬 기록) → `git push`(GitHub 업로드)
+
 ## 6) 트러블슈팅
+
+**자주 발생하는 문제별 우선 확인 순서**
+1. 명령 오타·공백·대소문자 (`cd..`, `-q0-`, `.envv`) → 복사·붙여넣기, Tab 자동완성
+2. 현재 위치·경로 (`pwd`, 절대 경로 여부) → 작업 폴더에서 실행했는지
+3. 권한 (`ls -l`, `id`, `sudo` 필요 여부) → TS-3, TS-5
+4. 상태 (`docker ps -a`, `git status`) → 실행 중/정지/생성만 됨 구분
+5. 포트·네트워크 (`ss -ltnp`, `docker port`) → TS-6
+6. 환경 경계 (WSL vs Windows, VSCode 모드, 인증) → TS-4, TS-7
 
 ### TS-1. PowerShell에서 `wsl --install <distro>` 입력 시 ParserError
 - **문제:** 안내 문서의 `wsl --install <distro>`를 그대로 입력하자 ParserError 발생
@@ -1062,6 +1318,24 @@ chalee@LG:~/codyssey/dev-workstation$ cat .git/config
   ?? perm_dir/
   ```
 
+### TS-6. 포트 충돌로 실패한 컨테이너를 `docker start`하면 실행은 되지만 포트가 연결되지 않음
+- **문제:** 8080 충돌로 `docker run`이 실패한 `port-conflict`를, 8080을 비운 뒤 `docker start`로 실행 → `Up (healthy)`인데 `docker ps --filter publish=8080`에 안 나오고 `curl localhost:8080` 응답 없음
+- **원인 가설:** (가) 실행 직후 종료 / (나) 실행 중이지만 포트 매핑 없음 / (다) 너무 빨리 확인
+- **확인:**
+  - `docker ps -a --filter name=port-conflict` → `Up 2 minutes (healthy)`, PORTS 비어 있음 → (가) 아님
+  - `docker port port-conflict` → 출력 없음, `ss` → 8080 LISTEN 없음
+  - `docker logs` → nginx 정상 시작, HEALTHCHECK `wget`만 30초 간격으로 200 응답 → 컨테이너 내부는 정상
+  - `docker inspect` → `설정: {"80/tcp":[{"HostPort":"8080"}]} / 실제: {}` → **(나) 확정**: 요청한 포트 설정은 남아 있으나 실패했던 포트 연결은 `start`로 다시 만들어지지 않음
+- **해결:** `docker rm -f port-conflict` 후 **새로 `docker run -p 8080:80`** → `docker port`에 `0.0.0.0:8080`, `curl` 응답 성공 (4-18)
+- **교훈:** `run`이 포트 충돌로 실패하면 반쯤 만들어진 컨테이너를 재사용하지 말고 삭제 후 다시 `run`
+
+### TS-7. 일반 Ubuntu 터미널에서 `git push` 시 `Username for 'https://github.com':` 요구
+- **문제:** 첫 `git push -u origin main`에서 사용자 이름 입력을 요구하며 멈춤
+- **원인 가설:** 저장된 GitHub 인증 정보가 없고, GitHub는 HTTPS push에 계정 비밀번호를 받지 않음(토큰 또는 OAuth 필요)
+- **확인:** VSCode에는 4-16에서 GitHub 계정이 로그인되어 있음. VSCode(WSL) 통합 터미널은 Git 인증 요청을 VSCode로 넘김(GIT_ASKPASS)
+- **해결:** `Ctrl+C`로 취소 → VSCode의 WSL 창에서 통합 터미널(`` Ctrl+` ``)을 열어 같은 명령 실행 → "The extension 'GitHub' wants to access a GitHub account" 창에서 `chalee-victory` 선택 → push 성공 (4-20)
+- **참고:** 비밀번호·토큰을 터미널이나 문서에 직접 입력·기록하지 않음. 이후 SSH 키 인증으로 전환 가능
+
 ### 기타 기록
 - 프롬프트(`PS C:\Users\OWNER>`)까지 복사해 입력 → `PS`가 Get-Process 별칭으로 실행되어 에러 → 명령만 입력
 - 첫 `wsl --install` 후 재부팅했는데 "설치된 배포가 없습니다" → WSL 기능만 설치된 상태 → 같은 명령 재실행
@@ -1076,7 +1350,7 @@ chalee@LG:~/codyssey/dev-workstation$ cat .git/config
 - 이메일 주소는 문서에서 `chalee6110@*****.com` 형태로 마스킹
 - 토큰·비밀번호·개인키·인증 코드는 문서·로그·스크린샷에 포함하지 않음 (GitHub 로그인은 OAuth 방식으로 VSCode에 비밀번호를 입력하지 않음)
 - `.gitignore`로 `.env`, `*.key`, `*.pem`, `.git-credentials`, 로그 파일을 저장소에서 차단하고 동작을 검증함 (4-17)
-- 터미널 녹화 파일(`terminal-log.txt`)은 저장소 밖(`~/codyssey/`)에 보관
+- 터미널 녹화 파일(`terminal-log.txt`)과 볼륨 백업 파일(`~/codyssey/volume-backup/`)은 저장소 밖(`~/codyssey/`)에 보관
 - `credential.helper=store`는 평문 저장 방식이므로, 이후 SSH 키 인증으로 대체하는 것을 권장
 
 ## 8) 저장소 구조
